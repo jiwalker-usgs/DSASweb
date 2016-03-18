@@ -181,13 +181,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			if (Double.isNaN(maxLength) || maxLength == 0.0) {
 				maxLength = IntersectionCalculator.calculateMaxDistance(transformedShorelines, transformedBaselines);
 			}
-
-			// These lines should be removed by creating a more proper assertion
-			MultiLineString shorelineGeometry = CRSUtils.getLinesFromFeatureCollection(transformedShorelines);
-			MultiLineString baselineGeometry = CRSUtils.getLinesFromFeatureCollection(transformedBaselines);
-			this.preparedShorelines = PreparedGeometryFactory.prepare(shorelineGeometry);
-			GeomAsserts.assertBaselinesDoNotCrossShorelines(preparedShorelines, baselineGeometry);
-
+			
 			IntersectionCalculator calc = new IntersectionCalculator(transformedShorelines, transformedBaselines, transformedBiasRef, maxLength, utmCrs, useFarthest);
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(transformedBaselines, shorelineGeometry, spacing, smoothing);
