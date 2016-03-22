@@ -1,16 +1,19 @@
 package gov.usgs.cida.dsas.wps;
 
-import com.vividsolutions.jts.geom.MultiLineString;
 import com.vividsolutions.jts.geom.prep.PreparedGeometry;
-import com.vividsolutions.jts.geom.prep.PreparedGeometryFactory;
 import gov.usgs.cida.dsas.exceptions.UnsupportedCoordinateReferenceSystemException;
 import gov.usgs.cida.dsas.util.CRSUtils;
-import gov.usgs.cida.dsas.util.GeomAsserts;
 import gov.usgs.cida.dsas.util.LayerImportUtil;
 import gov.usgs.cida.dsas.util.UTMFinder;
+import gov.usgs.cida.dsas.wps.geom.CalculationAreaDescriptor;
+
 import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
+
 import gov.usgs.cida.dsas.wps.geom.IntersectionCalculator;
 import gov.usgs.cida.dsas.wps.geom.Transect;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import org.geoserver.catalog.Catalog;
 import org.geoserver.catalog.ProjectionPolicy;
 import org.geoserver.wps.gs.GeoServerProcess;
@@ -92,9 +95,9 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 
 	protected class Process {
 
-		private final FeatureCollection<SimpleFeatureType, SimpleFeature> shorelineFeatureCollection;
-		private final FeatureCollection<SimpleFeatureType, SimpleFeature> baselineFeatureCollection;
-		private final FeatureCollection<SimpleFeatureType, SimpleFeature> biasRefFeatureCollection;
+		private final SimpleFeatureCollection shorelineFeatureCollection;
+		private final SimpleFeatureCollection baselineFeatureCollection;
+		private final SimpleFeatureCollection biasRefFeatureCollection;
 		private final double spacing;
 		private final double smoothing;
 		private double maxLength;
@@ -109,9 +112,9 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 
 		private PreparedGeometry preparedShorelines = null;
 
-		protected Process(FeatureCollection<SimpleFeatureType, SimpleFeature> shorelines,
-				FeatureCollection<SimpleFeatureType, SimpleFeature> baseline,
-				FeatureCollection<SimpleFeatureType, SimpleFeature> biasRef,
+		protected Process(SimpleFeatureCollection shorelines,
+				SimpleFeatureCollection baseline,
+				SimpleFeatureCollection biasRef,
 				double spacing,
 				double smoothing,
 				double maxLength,
@@ -166,27 +169,14 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 				throw new UnsupportedCoordinateReferenceSystemException("Baseline is not in accepted projection");
 			}
 			
-			this.utmCrs = UTMFinder.findUTMZoneCRSForCentroid((SimpleFeatureCollection) shorelineFeatureCollection);
-			if (this.utmCrs == null) {
-				throw new IllegalStateException("Must have usable UTM zone to continue");
+			CoordinateReferenceSystem utmCrs = UTMFinder.findUTMZoneCRSForCentroid((SimpleFeatureCollection) shorelineFeatureCollection);
+			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, utmCrs, maxLength, useFarthest, performBiasCorrection);
+
+			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(baselineFeatureCollection, spacing, smoothing);
+			List<CalculationAreaDescriptor> calculationAreas = calc.splitIntoSections(vectsOnBaseline);
+			for (CalculationAreaDescriptor area : calculationAreas) {
+				calc.calculateIntersections(area);
 			}
-
-			SimpleFeatureCollection transformedShorelines = CRSUtils.transformFeatureCollection(shorelineFeatureCollection, REQUIRED_CRS_WGS84, utmCrs);
-			SimpleFeatureCollection transformedBaselines = CRSUtils.transformFeatureCollection(baselineFeatureCollection, REQUIRED_CRS_WGS84, utmCrs);
-			SimpleFeatureCollection transformedBiasRef = null;
-			if (performBiasCorrection) {
-				transformedBiasRef = CRSUtils.transformFeatureCollection(biasRefFeatureCollection, REQUIRED_CRS_WGS84, utmCrs);
-			}
-
-			if (Double.isNaN(maxLength) || maxLength == 0.0) {
-				maxLength = IntersectionCalculator.calculateMaxDistance(transformedShorelines, transformedBaselines);
-			}
-			
-			IntersectionCalculator calc = new IntersectionCalculator(transformedShorelines, transformedBaselines, transformedBiasRef, maxLength, utmCrs, useFarthest);
-
-			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(transformedBaselines, shorelineGeometry, spacing, smoothing);
-
-			calc.calculateIntersections(vectsOnBaseline, transformedShorelines);
 			String createdTransectLayer = importer.importLayer(calc.getResultTransectsCollection(), workspace, store, transectLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);
 			String createdIntersectionLayer = importer.importLayer(calc.getResultIntersectionsCollection(), workspace, store, intersectionLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);
 			return createdTransectLayer + "," + createdIntersectionLayer;

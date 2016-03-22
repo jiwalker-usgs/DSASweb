@@ -43,7 +43,6 @@
  * The user assumes all risk for any damages whatsoever resulting from loss of use, data,
  * or profits arising in connection with the access, use, quality, or performance of this software.
  */
-
 package gov.usgs.cida.dsas.wps.geom;
 
 import com.vividsolutions.jts.geom.Coordinate;
@@ -61,8 +60,10 @@ import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.utilities.features.AttributeGetter;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.feature.FeatureCollection;
 import org.geotools.geometry.jts.Geometries;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.simple.SimpleFeatureType;
 
 /**
  *
@@ -77,7 +78,7 @@ public class ShorelineSTRTreeBuilder {
 	public ShorelineSTRTreeBuilder(SimpleFeatureCollection shorelines) {
 		this.strTree = new STRtree(shorelines.size());
 		this.factory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
-		
+
 		SimpleFeatureIterator features = null;
 		try {
 			features = shorelines.features();
@@ -85,34 +86,34 @@ public class ShorelineSTRTreeBuilder {
 
 			SimpleFeature previous = null;
 			SimpleFeature current = null;
-			
+
 			while (features.hasNext()) {
 				SimpleFeature feature = features.next();
 				if (getter == null) {
 					getter = new AttributeGetter(feature.getFeatureType());
 				}
-				Geometry geom = (Geometry)feature.getDefaultGeometry();
+				Geometry geom = (Geometry) feature.getDefaultGeometry();
 				Geometries geoms = Geometries.get(geom);
 				switch (geoms) {
 					case POINT:
-						Point point = (Point)geom;
+						Point point = (Point) geom;
 						current = feature;
 						if (!CRSUtils.isNewLineSegment(previous, current, getter)) {
 							// previous will not be null here
-							Point prevPoint = (Point)previous.getDefaultGeometry();
-							Point currPoint = (Point)current.getDefaultGeometry();
+							Point prevPoint = (Point) previous.getDefaultGeometry();
+							Point currPoint = (Point) current.getDefaultGeometry();
 							LineSegment segment = new LineSegment(prevPoint.getCoordinate(), currPoint.getCoordinate());
 							fillTree(segment, previous, current);
 						}
 						previous = current;
 						break;
 					case MULTIPOINT:
-						MultiPoint multipoint = (MultiPoint)geom;
+						MultiPoint multipoint = (MultiPoint) geom;
 						if (CRSUtils.isNewLineSegment(previous, current, getter)) {
 							Point prevPoint = null;
 							Point currPoint = null;
-							for (int i=0; i<multipoint.getNumPoints(); i++) {
-								currPoint = (Point)multipoint.getGeometryN(i);
+							for (int i = 0; i < multipoint.getNumPoints(); i++) {
+								currPoint = (Point) multipoint.getGeometryN(i);
 								if (prevPoint != null) {
 									LineSegment segment = new LineSegment(prevPoint.getCoordinate(), currPoint.getCoordinate());
 									fillTree(segment, current, null);
@@ -126,13 +127,13 @@ public class ShorelineSTRTreeBuilder {
 					case LINESTRING:
 						throw new UnsupportedFeatureTypeException("Only MultiLineString supported here");
 					case MULTILINESTRING:
-						MultiLineString mls = (MultiLineString)geom;
+						MultiLineString mls = (MultiLineString) geom;
 						this.built = false;
 						this.fillTree(mls, feature);
 						break;
 					case MULTIPOLYGON:
 					case POLYGON:
-					
+
 					default:
 						throw new UnsupportedFeatureTypeException("Unknown feature not supported");
 				}
@@ -144,36 +145,35 @@ public class ShorelineSTRTreeBuilder {
 		}
 	}
 
-    /* May also want to take FeatureCollection */
-    private void fillTree(MultiLineString shorelines, SimpleFeature feature) {
-        Coordinate prevCoord = null;
-        for (int i=0; i<shorelines.getNumGeometries(); i++) {
-            LineString line = (LineString)shorelines.getGeometryN(i);
-            for (Coordinate coord : line.getCoordinates()) {
-                if (prevCoord == null) {
-                    prevCoord = coord;
-                }
-                else {
-                    LineSegment segment = new LineSegment(prevCoord, coord);
-                    fillTree(segment, feature, null);
-                    prevCoord = coord;
-                }
-            }
-            prevCoord = null;
-        }
-    }
+	/* May also want to take FeatureCollection */
+	private void fillTree(MultiLineString shorelines, SimpleFeature feature) {
+		Coordinate prevCoord = null;
+		for (int i = 0; i < shorelines.getNumGeometries(); i++) {
+			LineString line = (LineString) shorelines.getGeometryN(i);
+			for (Coordinate coord : line.getCoordinates()) {
+				if (prevCoord == null) {
+					prevCoord = coord;
+				} else {
+					LineSegment segment = new LineSegment(prevCoord, coord);
+					fillTree(segment, feature, null);
+					prevCoord = coord;
+				}
+			}
+			prevCoord = null;
+		}
+	}
 
 	private void fillTree(LineSegment segment, SimpleFeature first, SimpleFeature second) {
 		LineString geom = segment.toGeometry(factory);
 		this.strTree.insert(geom.getEnvelopeInternal(), new ShorelineFeature(geom, first, second));
 	}
 
-    public STRtree build() {
-        if (built) {
-            throw new IllegalStateException("Tree already built");
-        }
-        strTree.build();
-        built = true;
-        return strTree;
-    }
+	public STRtree build() {
+		if (built) {
+			throw new IllegalStateException("Tree already built");
+		}
+		strTree.build();
+		built = true;
+		return strTree;
+	}
 }

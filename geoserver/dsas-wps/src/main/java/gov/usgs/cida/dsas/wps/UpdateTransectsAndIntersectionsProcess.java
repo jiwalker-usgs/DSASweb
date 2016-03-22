@@ -81,9 +81,12 @@ public class UpdateTransectsAndIntersectionsProcess implements GeoServerProcess 
 		private LayerInfo intersectionLayer;
 		private LayerInfo baselineLayer;
 		private SimpleFeatureCollection shorelines;
+		private SimpleFeatureCollection baselines;
 		private SimpleFeatureCollection biasRef;
 		private int[] transectIds;
 		private boolean useFarthest;
+		private boolean performBiasCorrection;
+		private SimpleFeatureCollection biasRefFeatureCollection;
 
 		private Process(String transectLayer, String intersectionLayer, String baselineLayer, SimpleFeatureCollection shorelines,
 				SimpleFeatureCollection biasRef, int[] transectIds, Boolean useFarthest) {
@@ -124,6 +127,7 @@ public class UpdateTransectsAndIntersectionsProcess implements GeoServerProcess 
 					baselineLayer.getResource().getStore().getName());
 			DataAccess<? extends FeatureType, ? extends Feature> baselineDa = gsUtils.getDataAccess(baselineDs, null);
 			FeatureSource<? extends FeatureType, ? extends Feature> baselineSource = gsUtils.getFeatureSource(baselineDa, baselineLayer.getName());
+			baselines = (SimpleFeatureCollection)baselineSource.getFeatures();
 
 			CoordinateReferenceSystem shorelinesCrs = CRSUtils.getCRSFromFeatureCollection(shorelines);
 			if (!CRS.equalsIgnoreMetadata(shorelinesCrs, REQUIRED_CRS_WGS84)) {
@@ -133,15 +137,16 @@ public class UpdateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			if (utmCrs == null) {
 				throw new IllegalStateException("Must have usable UTM zone to continue");
 			}
-
-			SimpleFeatureCollection transformedBaseline = CRSUtils.transformFeatureCollection((SimpleFeatureCollection) baselineSource.getFeatures(), baselineSource.getInfo().getCRS(), utmCrs);
-			SimpleFeatureCollection transformedShorelines = CRSUtils.transformFeatureCollection(shorelines, REQUIRED_CRS_WGS84, utmCrs);
-			SimpleFeatureCollection transformedBiasRef = null;
-			if (biasRef != null) {
-				transformedBiasRef = CRSUtils.transformFeatureCollection(biasRef, REQUIRED_CRS_WGS84, utmCrs);
+			
+			if (biasRef == null) {
+				this.performBiasCorrection = false;
+				this.biasRefFeatureCollection = null;
+			} else {
+				this.performBiasCorrection = true;
+				this.biasRefFeatureCollection = biasRef;
 			}
 
-			IntersectionCalculator calc = new IntersectionCalculator(transformedShorelines, transformedBaseline, transformedBiasRef, Double.NaN, utmCrs, useFarthest);
+			IntersectionCalculator calc = new IntersectionCalculator(shorelines, baselines, biasRefFeatureCollection, utmCrs, Double.NaN, useFarthest, performBiasCorrection);
 
 			List<Transect> updatedTransects = new LinkedList<>();
 			try {
@@ -179,7 +184,7 @@ public class UpdateTransectsAndIntersectionsProcess implements GeoServerProcess 
 					}
 					transaction.commit();
 				}
-				calc.calculateIntersections(updatedTransects.toArray(new Transect[updatedTransects.size()]), shorelines);
+				calc.calculateIntersections(updatedTransects.toArray(new Transect[updatedTransects.size()]));
 
 				SimpleFeatureCollection collection = calc.getResultIntersectionsCollection();
 				try {

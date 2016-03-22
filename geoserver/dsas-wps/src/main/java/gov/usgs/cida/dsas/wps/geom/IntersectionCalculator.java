@@ -3,24 +3,36 @@ package gov.usgs.cida.dsas.wps.geom;
 import com.google.common.collect.Maps;
 import com.vividsolutions.jts.algorithm.Angle;
 import com.vividsolutions.jts.geom.Coordinate;
+import com.vividsolutions.jts.geom.CoordinateSequence;
+import com.vividsolutions.jts.geom.Envelope;
 import com.vividsolutions.jts.geom.Geometry;
+import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineSegment;
 import com.vividsolutions.jts.geom.LineString;
 import com.vividsolutions.jts.geom.MultiLineString;
 import com.vividsolutions.jts.geom.Point;
+import com.vividsolutions.jts.geom.Polygon;
+import com.vividsolutions.jts.geom.PrecisionModel;
+import com.vividsolutions.jts.geom.impl.CoordinateArraySequence;
 import com.vividsolutions.jts.index.strtree.STRtree;
 import gov.usgs.cida.dsas.exceptions.PoorlyDefinedBaselineException;
 import gov.usgs.cida.dsas.util.BaselineDistanceAccumulator;
 import gov.usgs.cida.dsas.util.CRSUtils;
+import gov.usgs.cida.dsas.util.ShorelineUtils;
+import gov.usgs.cida.dsas.util.UTMFinder;
 import gov.usgs.cida.dsas.utilities.features.AttributeGetter;
+import gov.usgs.cida.dsas.utilities.features.Constants;
+
 import static gov.usgs.cida.dsas.utilities.features.Constants.AVG_SLOPE_ATTR;
 import static gov.usgs.cida.dsas.utilities.features.Constants.BASELINE_ORIENTATION_ATTR;
 import static gov.usgs.cida.dsas.utilities.features.Constants.BIAS_ATTR;
 import static gov.usgs.cida.dsas.utilities.features.Constants.BIAS_UNCY_ATTR;
 import static gov.usgs.cida.dsas.utilities.features.Constants.DEFAULT_BIAS;
 import static gov.usgs.cida.dsas.utilities.features.Constants.DEFAULT_BIAS_UNCY;
+
 import gov.usgs.cida.dsas.utilities.features.Constants.Orientation;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
@@ -32,7 +44,11 @@ import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.joda.time.DateTime;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.geometry.BoundingBox;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+
+import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
+import static org.apache.commons.validator.GenericValidator.maxLength;
 
 
 /**
@@ -43,9 +59,15 @@ public class IntersectionCalculator {
 	
 	private static final double MIN_TRANSECT_LENGTH = 50.0; // meters
 	private static final double TRANSECT_PADDING = 5.0d; // meters
+	private static final int MAX_VERTICES_IN_CALC_AREA = 1_000_000;
+	
+	private CoordinateReferenceSystem utmCrs;
 	
 	private SimpleFeatureCollection resultTransectsCollection;
 	private SimpleFeatureCollection resultIntersectionsCollection;
+	
+	private SimpleFeatureCollection transformedShorelines;
+	private SimpleFeatureCollection transformedBaselines;
 
 	private SimpleFeatureType intersectionFeatureType;
 	private SimpleFeatureType biasIncomingFeatureType;
@@ -53,25 +75,35 @@ public class IntersectionCalculator {
 			
 	private STRtree strTree;
 	private STRtree biasTree;
-
+	
+	private GeometryFactory geomFactory;
 	
 	private double maxTransectLength;
 	private int transectId;
 	private boolean useFarthest;
 
-	public IntersectionCalculator(SimpleFeatureCollection shorelines, SimpleFeatureCollection baseline,
-			SimpleFeatureCollection biasRef, double maxTransectLength, CoordinateReferenceSystem utmCrs, boolean useFarthest) {
+	public IntersectionCalculator(SimpleFeatureCollection shorelines,
+			SimpleFeatureCollection baseline,
+			SimpleFeatureCollection biasRef, CoordinateReferenceSystem utmCrs, 
+			double maxTransectLength, boolean useFarthest, boolean performBiasCorrection) {
 
-		this.intersectionFeatureType = Intersection.buildSimpleFeatureType(shorelines, utmCrs);
+		this.utmCrs = utmCrs;
+		this.intersectionFeatureType = Intersection.buildSimpleFeatureType(shorelines, Constants.REQUIRED_CRS_WGS84);
 		this.transectFeatureType = Transect.buildFeatureType(utmCrs);
-		if (biasRef != null) {
+		this.geomFactory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
+
+		this.transformedShorelines = CRSUtils.transformFeatureCollection(shorelines, REQUIRED_CRS_WGS84, utmCrs);
+		this.transformedBaselines = CRSUtils.transformFeatureCollection(baseline, REQUIRED_CRS_WGS84, utmCrs);
+		if (performBiasCorrection) {
+			SimpleFeatureCollection transformedBiasRef = CRSUtils.transformFeatureCollection(biasRef, REQUIRED_CRS_WGS84, utmCrs);
 			this.biasIncomingFeatureType = biasRef.getSchema();
-		}
-		this.strTree = new ShorelineSTRTreeBuilder(shorelines).build();
-		if (biasRef != null) {
-			this.biasTree = new ShorelineSTRTreeBuilder(biasRef).build();
+			this.biasTree = new ShorelineSTRTreeBuilder(transformedBiasRef).build();
 		} else {
 			this.biasTree = null;
+		}
+		
+		if (Double.isNaN(maxTransectLength) || maxTransectLength == 0.0) {
+			maxTransectLength = IntersectionCalculator.calculateMaxDistance(transformedShorelines, transformedBaselines);
 		}
 		
 		this.maxTransectLength = maxTransectLength;
@@ -79,13 +111,13 @@ public class IntersectionCalculator {
 		this.useFarthest = useFarthest;
 	}
 
-	public Transect[] getEvenlySpacedOrthoVectorsAlongBaseline(SimpleFeatureCollection baseline, MultiLineString shorelines, double spacing, double smoothing) {
+	public Transect[] getEvenlySpacedOrthoVectorsAlongBaseline(SimpleFeatureCollection baseline, double spacing, double smoothing) {
 		List<Transect> vectList = new LinkedList<>();
 
 		BaselineDistanceAccumulator accumulator = new BaselineDistanceAccumulator();
 		AttributeGetter attGet = new AttributeGetter(baseline.getSchema());
 
-		try (SimpleFeatureIterator features  = baseline.features()){
+		try (SimpleFeatureIterator features = baseline.features()){
 			while (features.hasNext()) {
 				SimpleFeature feature = features.next();
 				String orientVal = (String) attGet.getValue(BASELINE_ORIENTATION_ATTR, feature);
@@ -99,7 +131,7 @@ public class IntersectionCalculator {
 				MultiLineString lines = CRSUtils.getMultilineFromFeature(feature);
 				for (int i = 0; i < lines.getNumGeometries(); i++) { // probably only one Linestring
 					LineString line = (LineString) lines.getGeometryN(i);
-					int direction = shorelineDirection(line, shorelines);
+					int direction = shorelineDirection(line);
 
 					double baseDist = accumulator.accumulate(line);
 
@@ -109,13 +141,14 @@ public class IntersectionCalculator {
 		}
 		return vectList.toArray(new Transect[vectList.size()]);
 	}
-
+	
 	/**
-	 *
+	 * Perform the calculation of the intersections and add values to result
+	 * @param descriptor
 	 * @param vectsOnBaseline
-	 * @param shorelines
 	 */
-	public void calculateIntersections(Transect[] vectsOnBaseline, SimpleFeatureCollection shorelines) {
+	public void calculateIntersections(CalculationAreaDescriptor descriptor) {
+		Transect[] vectsOnBaseline = descriptor.getTransects();
 		if (vectsOnBaseline.length == 0) {
 			return;
 		}
@@ -196,19 +229,13 @@ public class IntersectionCalculator {
 		return transects;
 	}
 
-	private double averageDistance(Transect transect) {
-		double average = Double.MAX_VALUE;
+	private double nearestPoint(Transect transect) {
+		double nearest = Double.MAX_VALUE;
 		transect.setLength(maxTransectLength);
-		double total = 0.0;
-		AttributeGetter instersectionGetter = new AttributeGetter(intersectionFeatureType);
-		Map<DateTime, Intersection> intersections = Intersection.calculateIntersections(transect, strTree, useFarthest, instersectionGetter);
-		for (Intersection point : intersections.values()) {
-			total += point.getShiftedDistance();
-		}
-		if (intersections.size() > 0) {
-			average = total / intersections.size();
-		}
-		return average;
+		Envelope envelopeInternal = transect.getLineString().getEnvelopeInternal();
+		BoundingBox bbox = new ReferencedEnvelope(envelopeInternal, utmCrs);
+		double nearestVertexInBbox = ShorelineUtils.nearestVertexInBbox(transformedShorelines, transect.getOriginPoint(), bbox);
+		return nearestVertexInBbox;
 	}
 
 	/**
@@ -218,10 +245,9 @@ public class IntersectionCalculator {
 	 *
 	 * Use Shoreward orientation so distances are positive (otherwise we should use absolute distance)
 	 * @param baseline
-	 * @param shorelines
 	 * @return
 	 */
-	protected int shorelineDirection(LineString baseline, Geometry shorelines) {
+	protected int shorelineDirection(LineString baseline) {
 		Coordinate[] coordinates = baseline.getCoordinates();
 		int n = coordinates.length;
 		LineSegment a = new LineSegment(coordinates[0], coordinates[1]);
@@ -230,28 +256,28 @@ public class IntersectionCalculator {
 		if (n > 2) {
 			m = new LineSegment(coordinates[(int) n / 2], coordinates[(int) n / 2 + 1]);
 		}
-		double[] averages = new double[]{0.0, 0.0};
+		double[] nearestPoints = new double[]{0.0, 0.0};
 		Transect vector = Transect.generatePerpendicularVector(coordinates[0], a, Orientation.SHOREWARD, 0, "0", Double.NaN, Angle.CLOCKWISE);
-		averages[0] = averageDistance(vector);
+		nearestPoints[0] = nearestPoint(vector);
 		vector.rotate180Deg();
-		averages[1] = averageDistance(vector);
+		nearestPoints[1] = nearestPoint(vector);
 		vector = Transect.generatePerpendicularVector(coordinates[n - 1], b, Orientation.SHOREWARD, 0, "0", Double.NaN, Angle.COUNTERCLOCKWISE);
-		double currentAvg = averageDistance(vector);
-		averages[0] = (averages[0] < currentAvg) ? averages[0] : currentAvg;
+		double currentNearest = nearestPoint(vector);
+		nearestPoints[0] = (nearestPoints[0] < currentNearest) ? nearestPoints[0] : currentNearest;
 		vector.rotate180Deg();
-		currentAvg = averageDistance(vector);
-		averages[1] = (averages[1] < currentAvg) ? averages[1] : currentAvg;
+		currentNearest = nearestPoint(vector);
+		nearestPoints[1] = (nearestPoints[1] < currentNearest) ? nearestPoints[1] : currentNearest;
 		if (m != null) {
 			vector = Transect.generatePerpendicularVector(coordinates[(int) n / 2], m, Orientation.SHOREWARD, 0, "0", Double.NaN, Angle.CLOCKWISE);
-			currentAvg = averageDistance(vector);
-			averages[0] = (averages[0] < currentAvg) ? averages[0] : currentAvg;
+			currentNearest = nearestPoint(vector);
+			nearestPoints[0] = (nearestPoints[0] < currentNearest) ? nearestPoints[0] : currentNearest;
 			vector.rotate180Deg();
-			currentAvg = averageDistance(vector);
-			averages[1] = (averages[1] < currentAvg) ? averages[1] : currentAvg;
+			currentNearest = nearestPoint(vector);
+			nearestPoints[1] = (nearestPoints[1] < currentNearest) ? nearestPoints[1] : currentNearest;
 		}
-		if (averages[0] < averages[1]) {
+		if (nearestPoints[0] < nearestPoints[1]) {
 			return Angle.CLOCKWISE;
-		} else if (averages[0] > averages[1]) {
+		} else if (nearestPoints[0] > nearestPoints[1]) {
 			return Angle.COUNTERCLOCKWISE;
 		}
 		throw new PoorlyDefinedBaselineException("Baseline is ambiguous, transect direction cannot be determined");
@@ -455,6 +481,57 @@ public class IntersectionCalculator {
 			}
 		}
 		return proxy;
+	}
+
+	public List<CalculationAreaDescriptor> splitIntoSections(Transect[] vectsOnBaseline) {
+		List<CalculationAreaDescriptor> calcAreaList = new ArrayList<>();
+		
+		int numberTransectsPerArea = vectsOnBaseline.length;
+		int verticesWithinArea = getVerticesInArea(vectsOnBaseline);
+		while (verticesWithinArea > MAX_VERTICES_IN_CALC_AREA) {
+			numberTransectsPerArea = (int)Math.floor(numberTransectsPerArea / 2);
+			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, 0, numberTransectsPerArea);
+			verticesWithinArea = getVerticesInArea(subset);
+		}
+		
+		int lowerBound = 0;
+		while (lowerBound < vectsOnBaseline.length) {
+			int upperBound = lowerBound + numberTransectsPerArea;
+			if (upperBound >= vectsOnBaseline.length) {
+				upperBound = vectsOnBaseline.length - 1;
+			}
+			CalculationAreaDescriptor calculationAreaDescriptor = new CalculationAreaDescriptor();
+			// Change this if crs changes
+			calculationAreaDescriptor.setCrs(utmCrs);
+			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, lowerBound, upperBound);
+			calculationAreaDescriptor.setTransects(subset);
+			calculationAreaDescriptor.setTransectArea(getTransectArea(subset));
+			calcAreaList.add(calculationAreaDescriptor);
+			
+			lowerBound = upperBound + 1;
+		}
+		return calcAreaList;
+	}
+	
+	private int getVerticesInArea(Transect[] transects) {
+		Polygon transectArea = getTransectArea(transects);
+		return ShorelineUtils.countVertices(transformedShorelines, transectArea);
+	}
+	
+	private Polygon getTransectArea(Transect[] transects) {
+		Coordinate[] coords = new Coordinate[transects.length * 2 + 1];
+		
+		for (int i=0; i<coords.length; i++) {
+			if (i < transects.length) {
+				coords[i] = transects[i].getOriginCoord();
+			} else if (i < (2 * transects.length)) {
+				coords[i] = transects[2 * transects.length - i].getLineString().getCoordinateN(1);
+			} else {
+				coords[i] = transects[0].getOriginCoord();
+			}
+		}
+		Polygon transectArea = geomFactory.createPolygon(coords);
+		return transectArea;
 	}
 
 }
