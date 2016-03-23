@@ -1,6 +1,7 @@
 package gov.usgs.cida.dsas.wps.geom;
 
 import com.vividsolutions.jts.geom.Polygon;
+import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 /**
@@ -39,6 +40,10 @@ public class CalculationAreaDescriptor {
 
 	public void setTransectArea(Polygon transectArea) {
 		this.transectArea = transectArea;
+	}
+
+	SimpleFeature toFeature() {
+		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
 	}
 
 }

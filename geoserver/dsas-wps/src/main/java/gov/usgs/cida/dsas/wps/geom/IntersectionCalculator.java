@@ -291,7 +291,6 @@ public class IntersectionCalculator {
 		return resultIntersectionsCollection;
 	}
 	
-	
 	// NOTE: For each segment p0 is interval coord, with p1 = p0 + direction of segment as unit vector.
 	public static List<LineSegment> findIntervals(LineString lineString, boolean includeOrigin, double interval) {
 		LinkedList<LineSegment> intervalList = new LinkedList<>();
@@ -483,8 +482,8 @@ public class IntersectionCalculator {
 		return proxy;
 	}
 
-	public List<CalculationAreaDescriptor> splitIntoSections(Transect[] vectsOnBaseline) {
-		List<CalculationAreaDescriptor> calcAreaList = new ArrayList<>();
+	public SimpleFeatureCollection splitIntoSections(Transect[] vectsOnBaseline) {
+		List<SimpleFeature> executionPlan = new ArrayList<>();
 		
 		int numberTransectsPerArea = vectsOnBaseline.length;
 		int verticesWithinArea = getVerticesInArea(vectsOnBaseline);
@@ -506,11 +505,11 @@ public class IntersectionCalculator {
 			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, lowerBound, upperBound);
 			calculationAreaDescriptor.setTransects(subset);
 			calculationAreaDescriptor.setTransectArea(getTransectArea(subset));
-			calcAreaList.add(calculationAreaDescriptor);
+			executionPlan.add(calculationAreaDescriptor.toFeature());
 			
 			lowerBound = upperBound + 1;
 		}
-		return calcAreaList;
+		return resultTransectsCollection = DataUtilities.collection(executionPlan);
 	}
 	
 	private int getVerticesInArea(Transect[] transects) {
