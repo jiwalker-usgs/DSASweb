@@ -292,4 +292,13 @@ public class CRSUtils {
 		}
 		return isNewSegment;
 	}
+	
+	public static CoordinateReferenceSystem lookupCRS(String epsgCode) throws FactoryException {
+		String lookup = epsgCode;
+		if (!epsgCode.startsWith("EPSG") && !epsgCode.startsWith("epsg")) {
+			lookup = "EPSG:" + epsgCode;
+		}
+		CoordinateReferenceSystem crs = CRS.decode(lookup);
+		return crs;
+	}
 }
