@@ -1,13 +1,10 @@
 package gov.usgs.cida.dsas.wps;
 
-import com.vividsolutions.jts.geom.prep.PreparedGeometry;
 import gov.usgs.cida.dsas.exceptions.UnsupportedCoordinateReferenceSystemException;
 import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.util.LayerImportUtil;
-import gov.usgs.cida.dsas.wps.geom.CalculationAreaDescriptor;
 import gov.usgs.cida.dsas.wps.geom.IntersectionCalculator;
 import gov.usgs.cida.dsas.wps.geom.Transect;
-import java.util.List;
 import org.geoserver.catalog.Catalog;
 import org.geoserver.catalog.ProjectionPolicy;
 import org.geoserver.wps.gs.GeoServerProcess;
@@ -101,7 +98,7 @@ public class CreateExecutionPlanProcess implements GeoServerProcess {
 				throw new UnsupportedCoordinateReferenceSystemException("Baseline is not in accepted projection");
 			}
 			
-			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, utmCrs, maxLength, useFarthest, performBiasCorrection);
+			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, null, crs, maxLength, false, false);
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(baselineFeatureCollection, spacing, smoothing);
 			SimpleFeatureCollection executionPlan = calc.splitIntoSections(vectsOnBaseline);

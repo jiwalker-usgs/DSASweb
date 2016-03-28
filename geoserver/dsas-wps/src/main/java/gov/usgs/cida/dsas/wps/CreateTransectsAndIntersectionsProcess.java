@@ -12,20 +12,17 @@ import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84
 import gov.usgs.cida.dsas.wps.geom.IntersectionCalculator;
 import gov.usgs.cida.dsas.wps.geom.Transect;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import org.geoserver.catalog.Catalog;
 import org.geoserver.catalog.ProjectionPolicy;
 import org.geoserver.wps.gs.GeoServerProcess;
 import org.geoserver.wps.gs.ImportProcess;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.feature.FeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
 import org.geotools.referencing.CRS;
 import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 /**
@@ -173,9 +170,11 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, utmCrs, maxLength, useFarthest, performBiasCorrection);
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(baselineFeatureCollection, spacing, smoothing);
-			List<CalculationAreaDescriptor> calculationAreas = calc.splitIntoSections(vectsOnBaseline);
-			for (CalculationAreaDescriptor area : calculationAreas) {
-				calc.calculateIntersections(area);
+			SimpleFeatureCollection calculationAreas = calc.splitIntoSections(vectsOnBaseline);
+			SimpleFeatureIterator features = calculationAreas.features();
+			while (features.hasNext()) {
+				SimpleFeature feature = features.next();
+				calc.calculateIntersections(vectsOnBaseline, feature);
 			}
 			String createdTransectLayer = importer.importLayer(calc.getResultTransectsCollection(), workspace, store, transectLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);
 			String createdIntersectionLayer = importer.importLayer(calc.getResultIntersectionsCollection(), workspace, store, intersectionLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);

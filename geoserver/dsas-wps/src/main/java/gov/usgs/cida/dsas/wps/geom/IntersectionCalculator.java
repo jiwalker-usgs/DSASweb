@@ -147,8 +147,7 @@ public class IntersectionCalculator {
 	 * @param descriptor
 	 * @param vectsOnBaseline
 	 */
-	public void calculateIntersections(CalculationAreaDescriptor descriptor) {
-		Transect[] vectsOnBaseline = descriptor.getTransects();
+	public void calculateIntersections(Transect[] vectsOnBaseline, SimpleFeature executionPlan) {
 		if (vectsOnBaseline.length == 0) {
 			return;
 		}
