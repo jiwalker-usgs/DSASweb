@@ -233,7 +233,7 @@ public class Transect {
 			baseDist = NaN;
 		}
 		ProxyDatumBias bias = ProxyDatumBias.fromFeature(feature);
-
+		
 		Transect transect = new Transect(segment.p0, segment.angle(), orient, id, baselineId, baseDist, bias);
 		transect.length = segment.p0.distance(segment.p1);
 

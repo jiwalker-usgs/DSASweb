@@ -15,6 +15,7 @@ var TransectVerification = {
 	stage: 'transect_verification',
 	suffixes: ['_baseline'], // There are no layers specific to this stage
 	DEFAULT_SPACING: 50,
+	DEFAULT_LENGTH: 1500,
 	WPS_REQUEST_TEMPLATE: null,
 	WPS_REQUEST: null,
 	UTM_LAYER: null,
@@ -110,7 +111,7 @@ var TransectVerification = {
 			}
 
 			if (length.isBlank() || isNaN(parseFloat(length))) {
-				length = null;
+				length = TransectVerification.DEFAULT_LENGTH;
 			}
 
 			// Create the shoreline object needed to create the WPS request

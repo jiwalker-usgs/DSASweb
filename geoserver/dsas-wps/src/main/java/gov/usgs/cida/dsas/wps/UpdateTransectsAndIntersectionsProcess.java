@@ -178,13 +178,14 @@ public class UpdateTransectsAndIntersectionsProcess implements GeoServerProcess 
 
 					if (null != transect) {
 						Transect transectObj = Transect.fromFeature(transect);
-						Transect updatedTransect = updateTransectBaseDist(transectObj, transformedBaseline);
-						transectStore.modifyFeatures(new NameImpl(BASELINE_DIST_ATTR), updatedTransect.getBaselineDistance(), transectFilter);
-						updatedTransects.add(updatedTransect);
+						// get the baseline from plan and reproject
+						//Transect updatedTransect = updateTransectBaseDist(transectObj, transformedBaseline);
+						//transectStore.modifyFeatures(new NameImpl(BASELINE_DIST_ATTR), updatedTransect.getBaselineDistance(), transectFilter);
+						//updatedTransects.add(updatedTransect);
 					}
 					transaction.commit();
 				}
-				calc.calculateIntersections(updatedTransects.toArray(new Transect[updatedTransects.size()]));
+				//calc.calculateIntersections(updatedTransects.toArray(new Transect[updatedTransects.size()]));
 
 				SimpleFeatureCollection collection = calc.getResultIntersectionsCollection();
 				try {

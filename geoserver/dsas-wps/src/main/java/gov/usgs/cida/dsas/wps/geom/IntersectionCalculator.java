@@ -3,9 +3,7 @@ package gov.usgs.cida.dsas.wps.geom;
 import com.google.common.collect.Maps;
 import com.vividsolutions.jts.algorithm.Angle;
 import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.CoordinateSequence;
 import com.vividsolutions.jts.geom.Envelope;
-import com.vividsolutions.jts.geom.Geometry;
 import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineSegment;
 import com.vividsolutions.jts.geom.LineString;
@@ -13,13 +11,11 @@ import com.vividsolutions.jts.geom.MultiLineString;
 import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.geom.Polygon;
 import com.vividsolutions.jts.geom.PrecisionModel;
-import com.vividsolutions.jts.geom.impl.CoordinateArraySequence;
 import com.vividsolutions.jts.index.strtree.STRtree;
 import gov.usgs.cida.dsas.exceptions.PoorlyDefinedBaselineException;
 import gov.usgs.cida.dsas.util.BaselineDistanceAccumulator;
 import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.util.ShorelineUtils;
-import gov.usgs.cida.dsas.util.UTMFinder;
 import gov.usgs.cida.dsas.utilities.features.AttributeGetter;
 import gov.usgs.cida.dsas.utilities.features.Constants;
 
@@ -40,6 +36,7 @@ import java.util.Map;
 import org.geotools.data.DataUtilities;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.store.ReprojectingFeatureCollection;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.joda.time.DateTime;
 import org.opengis.feature.simple.SimpleFeature;
@@ -48,7 +45,6 @@ import org.opengis.geometry.BoundingBox;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
-import static org.apache.commons.validator.GenericValidator.maxLength;
 
 
 /**
@@ -59,7 +55,7 @@ public class IntersectionCalculator {
 	
 	private static final double MIN_TRANSECT_LENGTH = 50.0; // meters
 	private static final double TRANSECT_PADDING = 5.0d; // meters
-	private static final int MAX_VERTICES_IN_CALC_AREA = 1_000_000;
+	private static final int MAX_VERTICES_IN_CALC_AREA = 1_000;
 	
 	private CoordinateReferenceSystem utmCrs;
 	
@@ -92,8 +88,8 @@ public class IntersectionCalculator {
 		this.transectFeatureType = Transect.buildFeatureType(utmCrs);
 		this.geomFactory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
 
-		this.transformedShorelines = CRSUtils.transformFeatureCollection(shorelines, REQUIRED_CRS_WGS84, utmCrs);
-		this.transformedBaselines = CRSUtils.transformFeatureCollection(baseline, REQUIRED_CRS_WGS84, utmCrs);
+		this.transformedShorelines = new ReprojectingFeatureCollection(shorelines, utmCrs);
+		this.transformedBaselines = new ReprojectingFeatureCollection(baseline, utmCrs);
 		if (performBiasCorrection) {
 			SimpleFeatureCollection transformedBiasRef = CRSUtils.transformFeatureCollection(biasRef, REQUIRED_CRS_WGS84, utmCrs);
 			this.biasIncomingFeatureType = biasRef.getSchema();
@@ -111,13 +107,13 @@ public class IntersectionCalculator {
 		this.useFarthest = useFarthest;
 	}
 
-	public Transect[] getEvenlySpacedOrthoVectorsAlongBaseline(SimpleFeatureCollection baseline, double spacing, double smoothing) {
+	public Transect[] getEvenlySpacedOrthoVectorsAlongBaseline(double spacing, double smoothing) {
 		List<Transect> vectList = new LinkedList<>();
 
 		BaselineDistanceAccumulator accumulator = new BaselineDistanceAccumulator();
-		AttributeGetter attGet = new AttributeGetter(baseline.getSchema());
+		AttributeGetter attGet = new AttributeGetter(transformedBaselines.getSchema());
 
-		try (SimpleFeatureIterator features = baseline.features()){
+		try (SimpleFeatureIterator features = transformedBaselines.features()){
 			while (features.hasNext()) {
 				SimpleFeature feature = features.next();
 				String orientVal = (String) attGet.getValue(BASELINE_ORIENTATION_ATTR, feature);
@@ -144,8 +140,8 @@ public class IntersectionCalculator {
 	
 	/**
 	 * Perform the calculation of the intersections and add values to result
-	 * @param descriptor
-	 * @param vectsOnBaseline
+	 * @param vectsOnBaseline all possible transect vectors
+	 * @param executionPlan polygon to subset into
 	 */
 	public void calculateIntersections(Transect[] vectsOnBaseline, SimpleFeature executionPlan) {
 		if (vectsOnBaseline.length == 0) {
@@ -523,7 +519,7 @@ public class IntersectionCalculator {
 			if (i < transects.length) {
 				coords[i] = transects[i].getOriginCoord();
 			} else if (i < (2 * transects.length)) {
-				coords[i] = transects[2 * transects.length - i].getLineString().getCoordinateN(1);
+				coords[i] = transects[2 * transects.length - (i + 1)].getLineString().getCoordinateN(1);
 			} else {
 				coords[i] = transects[0].getOriginCoord();
 			}

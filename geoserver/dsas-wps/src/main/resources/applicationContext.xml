@@ -7,15 +7,20 @@
 	<bean id="nearestPointOnLine" class="gov.usgs.cida.dsas.wps.NearestPointOnLineProcess" />
 	<bean id="plainTextPPIO" class="gov.usgs.cida.dsas.wps.ppio.PlainTextPPIO" />
 	
+	<bean id="executionPlan" class="gov.usgs.cida.dsas.wps.CreateExecutionPlanProcess">
+		<constructor-arg index="0" ref="importProcess"/>
+		<constructor-arg index="1" ref="catalog"/>
+	</bean>
+	
 	<bean id="generateTransects" class="gov.usgs.cida.dsas.wps.CreateTransectsAndIntersectionsProcess">
 		<constructor-arg index="0" ref="importProcess"/>
 		<constructor-arg index="1" ref="catalog"/>
 	</bean>
-    
+
 	<bean id="updateTransects" class="gov.usgs.cida.dsas.wps.UpdateTransectsAndIntersectionsProcess">
 		<constructor-arg index="0" ref="catalog"/>
 	</bean>
-    
+
 	<bean id="appendColumnsToLayer" class="gov.usgs.cida.dsas.wps.AppendColumnsToLayerProcess">
 		<constructor-arg index="0" ref="importProcess"/>
 		<constructor-arg index="1" ref="catalog"/>
@@ -25,7 +30,8 @@
 		<constructor-arg index="0" ref="importProcess"/>
 		<constructor-arg index="1" ref="catalog"/>
 	</bean>
-    	<bean id="normalizeLayerColumnNames" class="gov.usgs.cida.dsas.wps.NormalizeLayerColumnNamesProcess">
+
+	<bean id="normalizeLayerColumnNames" class="gov.usgs.cida.dsas.wps.NormalizeLayerColumnNamesProcess">
 		<constructor-arg index="0" ref="importProcess"/>
 		<constructor-arg index="1" ref="catalog"/>
 	</bean>
@@ -43,5 +49,5 @@
 	<bean id="sweeper" class="gov.usgs.cida.dsas.util.GeoserverSweeperStartupListener">
 		<constructor-arg index="0" ref="catalog"/>
 	</bean>
-    
+
 </beans>

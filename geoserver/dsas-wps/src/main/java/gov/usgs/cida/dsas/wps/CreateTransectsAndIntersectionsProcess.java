@@ -169,7 +169,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			CoordinateReferenceSystem utmCrs = UTMFinder.findUTMZoneCRSForCentroid((SimpleFeatureCollection) shorelineFeatureCollection);
 			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, utmCrs, maxLength, useFarthest, performBiasCorrection);
 
-			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(baselineFeatureCollection, spacing, smoothing);
+			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(spacing, smoothing);
 			SimpleFeatureCollection calculationAreas = calc.splitIntoSections(vectsOnBaseline);
 			SimpleFeatureIterator features = calculationAreas.features();
 			while (features.hasNext()) {
