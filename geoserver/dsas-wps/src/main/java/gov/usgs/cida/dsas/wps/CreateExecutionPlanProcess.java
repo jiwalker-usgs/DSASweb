@@ -101,6 +101,9 @@ public class CreateExecutionPlanProcess implements GeoServerProcess {
 			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, null, crs, maxLength, false, false);
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(spacing, smoothing);
+			for (Transect t : vectsOnBaseline) {
+				t.setLength(maxLength);
+			}
 			SimpleFeatureCollection executionPlan = calc.splitIntoSections(vectsOnBaseline);
 			String createdPlanLayer = importer.importLayer(executionPlan, workspace, store, planLayer, crs, ProjectionPolicy.REPROJECT_TO_DECLARED);
 			return createdPlanLayer;

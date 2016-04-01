@@ -51,6 +51,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 	 * @param shorelines feature collection of shorelines
 	 * @param baseline feature collection of baselines
 	 * @param biasRef feature collection of PDBC bias reference line
+	 * @param execPlan feature collection with breakdown of execution areas
 	 * @param spacing spacing in meters of transects along baseline
 	 * @param smoothing how much smoothing to apply to transect generation
 	 * @param maxLength maximum length to use when drawing transects (default is to calculate)
@@ -68,6 +69,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			@DescribeParameter(name = "shorelines", min = 1, max = 1) SimpleFeatureCollection shorelines,
 			@DescribeParameter(name = "baseline", min = 1, max = 1) SimpleFeatureCollection baseline,
 			@DescribeParameter(name = "biasRef", min = 0, max = 1) SimpleFeatureCollection biasRef,
+			@DescribeParameter(name = "executionPlan", min = 1, max = 1) SimpleFeatureCollection execPlan,
 			@DescribeParameter(name = "spacing", min = 1, max = 1) Double spacing,
 			@DescribeParameter(name = "smoothing", min = 0, max = 1) Double smoothing,
 			@DescribeParameter(name = "maxLength", min = 0, max =1) Double maxLength,
@@ -87,7 +89,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			farthest = false;
 		}
 
-		return new Process(shorelines, baseline, biasRef, spacing, smoothing, maxLength, farthest, workspace, store, transectLayer, intersectionLayer).execute();
+		return new Process(shorelines, baseline, biasRef, execPlan, spacing, smoothing, maxLength, farthest, workspace, store, transectLayer, intersectionLayer).execute();
 	}
 
 	protected class Process {
@@ -95,6 +97,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 		private final SimpleFeatureCollection shorelineFeatureCollection;
 		private final SimpleFeatureCollection baselineFeatureCollection;
 		private final SimpleFeatureCollection biasRefFeatureCollection;
+		private final SimpleFeatureCollection executionPlanCollection;
 		private final double spacing;
 		private final double smoothing;
 		private double maxLength;
@@ -107,11 +110,10 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 
 		private CoordinateReferenceSystem utmCrs;
 
-		private PreparedGeometry preparedShorelines = null;
-
 		protected Process(SimpleFeatureCollection shorelines,
 				SimpleFeatureCollection baseline,
 				SimpleFeatureCollection biasRef,
+				SimpleFeatureCollection execPlan,
 				double spacing,
 				double smoothing,
 				double maxLength,
@@ -123,6 +125,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			
 			this.shorelineFeatureCollection = shorelines;
 			this.baselineFeatureCollection = baseline;
+			this.executionPlanCollection = execPlan;
 
 			if (biasRef == null) {
 				this.performBiasCorrection = false;
@@ -171,6 +174,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(spacing, smoothing);
 			SimpleFeatureCollection calculationAreas = calc.splitIntoSections(vectsOnBaseline);
+			
 			SimpleFeatureIterator features = calculationAreas.features();
 			while (features.hasNext()) {
 				SimpleFeature feature = features.next();

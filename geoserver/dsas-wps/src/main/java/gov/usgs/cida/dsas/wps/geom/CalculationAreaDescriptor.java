@@ -20,7 +20,6 @@ public class CalculationAreaDescriptor {
 	private static final Logger log = LoggerFactory.getLogger(CalculationAreaDescriptor.class);
 
 	private static final String CALC_CRS = "calc_crs";
-	private static final String SHORELINE_DIRECTION = "shoredir";
 	
 	private final SimpleFeatureType type;
 	
@@ -34,7 +33,6 @@ public class CalculationAreaDescriptor {
 		builder.setName("ExecutionPlan");
 		builder.add("geom", Polygon.class, crs);
 		builder.add(CALC_CRS, String.class);
-		builder.add(SHORELINE_DIRECTION, Integer.class);
 		this.type = builder.buildFeatureType();
 	}
 
