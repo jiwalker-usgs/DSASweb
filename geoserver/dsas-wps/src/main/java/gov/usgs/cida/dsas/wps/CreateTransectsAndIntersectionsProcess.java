@@ -1,23 +1,21 @@
 package gov.usgs.cida.dsas.wps;
 
-import com.vividsolutions.jts.geom.prep.PreparedGeometry;
 import gov.usgs.cida.dsas.exceptions.UnsupportedCoordinateReferenceSystemException;
 import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.util.LayerImportUtil;
 import gov.usgs.cida.dsas.util.UTMFinder;
-import gov.usgs.cida.dsas.wps.geom.CalculationAreaDescriptor;
 
 import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
 
 import gov.usgs.cida.dsas.wps.geom.IntersectionCalculator;
 import gov.usgs.cida.dsas.wps.geom.Transect;
-import java.util.List;
 import org.geoserver.catalog.Catalog;
 import org.geoserver.catalog.ProjectionPolicy;
 import org.geoserver.wps.gs.GeoServerProcess;
 import org.geoserver.wps.gs.ImportProcess;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.store.ReprojectingFeatureCollection;
 import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
@@ -57,6 +55,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 	 * @param maxLength maximum length to use when drawing transects (default is to calculate)
 	 * @param farthest whether to use nearest or farthest intersection of
 	 * shoreline (default false)
+	 * @param calcProjection
 	 * @param workspace workspace in which to create new layers
 	 * @param store store in which to create new layers
 	 * @param transectLayer name of created transect layer
@@ -74,6 +73,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			@DescribeParameter(name = "smoothing", min = 0, max = 1) Double smoothing,
 			@DescribeParameter(name = "maxLength", min = 0, max =1) Double maxLength,
 			@DescribeParameter(name = "farthest", min = 0, max = 1) Boolean farthest,
+			@DescribeParameter(name = "calcProjection", min = 1, max = 1) String calcProjection,
 			@DescribeParameter(name = "workspace", min = 1, max = 1) String workspace,
 			@DescribeParameter(name = "store", min = 1, max = 1) String store,
 			@DescribeParameter(name = "transectLayer", min = 1, max = 1) String transectLayer,
@@ -89,7 +89,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			farthest = false;
 		}
 
-		return new Process(shorelines, baseline, biasRef, execPlan, spacing, smoothing, maxLength, farthest, workspace, store, transectLayer, intersectionLayer).execute();
+		return new Process(shorelines, baseline, biasRef, execPlan, spacing, smoothing, maxLength, farthest, calcProjection, workspace, store, transectLayer, intersectionLayer).execute();
 	}
 
 	protected class Process {
@@ -103,12 +103,11 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 		private double maxLength;
 		private final boolean useFarthest;
 		private final boolean performBiasCorrection;
+		private final String calcProjection;
 		private final String workspace;
 		private final String store;
 		private final String transectLayer;
 		private final String intersectionLayer;
-
-		private CoordinateReferenceSystem utmCrs;
 
 		protected Process(SimpleFeatureCollection shorelines,
 				SimpleFeatureCollection baseline,
@@ -118,6 +117,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 				double smoothing,
 				double maxLength,
 				Boolean farthest,
+				String calcProjection,
 				String workspace,
 				String store,
 				String transectLayer,
@@ -140,6 +140,7 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 			this.maxLength = maxLength;
 			this.useFarthest = farthest;
 
+			this.calcProjection = calcProjection;
 			this.workspace = workspace;
 			this.store = store;
 			this.transectLayer = transectLayer;
@@ -169,19 +170,20 @@ public class CreateTransectsAndIntersectionsProcess implements GeoServerProcess 
 				throw new UnsupportedCoordinateReferenceSystemException("Baseline is not in accepted projection");
 			}
 			
-			CoordinateReferenceSystem utmCrs = UTMFinder.findUTMZoneCRSForCentroid((SimpleFeatureCollection) shorelineFeatureCollection);
-			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, utmCrs, maxLength, useFarthest, performBiasCorrection);
+			CoordinateReferenceSystem crs = CRSUtils.lookupCRS(calcProjection);
+			
+			IntersectionCalculator calc = new IntersectionCalculator(shorelineFeatureCollection, baselineFeatureCollection, biasRefFeatureCollection, crs, maxLength, useFarthest, performBiasCorrection);
 
 			Transect[] vectsOnBaseline = calc.getEvenlySpacedOrthoVectorsAlongBaseline(spacing, smoothing);
-			SimpleFeatureCollection calculationAreas = calc.splitIntoSections(vectsOnBaseline);
 			
-			SimpleFeatureIterator features = calculationAreas.features();
+			SimpleFeatureIterator features = new ReprojectingFeatureCollection(executionPlanCollection, crs).features();
 			while (features.hasNext()) {
 				SimpleFeature feature = features.next();
+				// This currently adds intersections and transects to list, TODO move this to writing to database
 				calc.calculateIntersections(vectsOnBaseline, feature);
 			}
-			String createdTransectLayer = importer.importLayer(calc.getResultTransectsCollection(), workspace, store, transectLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);
-			String createdIntersectionLayer = importer.importLayer(calc.getResultIntersectionsCollection(), workspace, store, intersectionLayer, utmCrs, ProjectionPolicy.REPROJECT_TO_DECLARED);
+			String createdTransectLayer = importer.importLayer(calc.getResultTransectsCollection(), workspace, store, transectLayer, crs, ProjectionPolicy.REPROJECT_TO_DECLARED);
+			String createdIntersectionLayer = importer.importLayer(calc.getResultIntersectionsCollection(), workspace, store, intersectionLayer, crs, ProjectionPolicy.REPROJECT_TO_DECLARED);
 			return createdTransectLayer + "," + createdIntersectionLayer;
 		}
 

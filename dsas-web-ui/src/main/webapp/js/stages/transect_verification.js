@@ -14,6 +14,8 @@
 var TransectVerification = {
 	stage: 'transect_verification',
 	suffixes: ['_baseline'], // There are no layers specific to this stage
+	calculationProjection: undefined,
+	execPlan: undefined,
 	DEFAULT_SPACING: 50,
 	DEFAULT_LENGTH: 1500,
 	WPS_REQUEST_TEMPLATE: null,
@@ -168,7 +170,11 @@ var TransectVerification = {
 			wpsRequestObject: this.WPS_REQUEST,
 			context: this
 		})).done(function (data, textStatus, jqXHR) {
-			// TODO- What do we do here?
+			if (typeof data === 'string') {
+				var execPlan = data;
+				TransectVerification.execPlan = execPlan;
+				TransectVerification.calculationProjection = $(this.controlIdentifiers.utmSelector).val();
+			}
 		}).fail(function (jqXHR, textStatus, errorThrown) {
 			// TODO- What do we do here?
 		});

@@ -7,6 +7,7 @@
 /*global Results */
 /*global Shorelines */
 /*global ProxyDatumBias */
+/*global TransectVerification */
 "use strict";
 var Transects = {
 	stage: 'transects',
@@ -929,6 +930,8 @@ var Transects = {
 			selectedBounds = Shorelines.aoiBoundsSelected,
 			baseline = Baseline.getActive(),
 			biasRef = ProxyDatumBias.usePdbInProcessing ? ProxyDatumBias.overrideWorkspace + ":" + ProxyDatumBias.overrideLayer : null,
+			execPlan = TransectVerification.execPlan,
+			calcProjection = TransectVerification.calculationProjection,
 			spacing = $('#create-transects-input-spacing').val() || 0,
 			length = $('#create-transects-input-length').val(),
 			layerName = $('#create-transects-input-name').val(),
@@ -960,10 +963,12 @@ var Transects = {
 			shorelines: shorelines,
 			biasRef: biasRef,
 			baseline: baseline,
+			execPlan: execPlan,
 			spacing: spacing,
 			length: length,
 			farthest: farthest,
 			smoothing: smoothing,
+			calcProjection: calcProjection,
 			workspace: CONFIG.tempSession.getCurrentSessionKey(),
 			store: 'ch-input',
 			transectLayer: layerName + '_transects',
@@ -1073,11 +1078,14 @@ var Transects = {
 		var shorelines = args.shorelines;
 		var baseline = args.baseline;
 		var biasRef = args.biasRef;
+		var execPlan = args.execPlan;
+		var execPlanNS = execPlan.split(':')[0] + '="gov.usgs.cida.ch.' + execPlan.split(':')[0] + '"';
 		var biasrefNS = biasRef ? biasRef.split(':')[0] + '="' + CONFIG.namespace.proxydatumbias + '"' : '';
 		var baselineNS = baseline.split(':')[0] + '="gov.usgs.cida.ch.' + baseline.split(':')[0] + '"';
 		var spacing = args.spacing ? args.spacing : Transects.DEFAULT_SPACING;
 		var smoothing = args.smoothing || 0.0;
 		var farthest = args.farthest;
+		var calcProjection = args.calcProjection;
 		var workspace = args.workspace;
 		var transectLayer = args.transectLayer;
 		var intersectionLayer = args.intersectionLayer;
@@ -1102,6 +1110,9 @@ var Transects = {
 			biasrefNS: biasrefNS,
 			baseline: baseline,
 			baselineNS: baselineNS,
+			execPlan: execPlan,
+			execPlanNS: execPlanNS,
+			calcProjection: calcProjection,
 			spacing: spacing,
 			length: length,
 			smoothing: smoothing,

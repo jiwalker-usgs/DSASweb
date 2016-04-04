@@ -60,10 +60,8 @@ import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.utilities.features.AttributeGetter;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.feature.FeatureCollection;
 import org.geotools.geometry.jts.Geometries;
 import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
 
 /**
  *
@@ -73,11 +71,13 @@ public class ShorelineSTRTreeBuilder {
 
 	private STRtree strTree;
 	private GeometryFactory factory;
+	private Geometry within;
 	private boolean built;
 
-	public ShorelineSTRTreeBuilder(SimpleFeatureCollection shorelines) {
+	public ShorelineSTRTreeBuilder(SimpleFeatureCollection shorelines, Geometry within) {
 		this.strTree = new STRtree(shorelines.size());
 		this.factory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
+		this.within = within;
 
 		SimpleFeatureIterator features = null;
 		try {
@@ -165,7 +165,9 @@ public class ShorelineSTRTreeBuilder {
 
 	private void fillTree(LineSegment segment, SimpleFeature first, SimpleFeature second) {
 		LineString geom = segment.toGeometry(factory);
-		this.strTree.insert(geom.getEnvelopeInternal(), new ShorelineFeature(geom, first, second));
+		if (within.contains(geom) || within.crosses(geom)) {
+			this.strTree.insert(geom.getEnvelopeInternal(), new ShorelineFeature(geom, first, second));
+		}
 	}
 
 	public STRtree build() {

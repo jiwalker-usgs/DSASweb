@@ -4,6 +4,7 @@ import com.google.common.collect.Maps;
 import com.vividsolutions.jts.algorithm.Angle;
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Envelope;
+import com.vividsolutions.jts.geom.Geometry;
 import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineSegment;
 import com.vividsolutions.jts.geom.LineString;
@@ -46,7 +47,6 @@ import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
 
-
 /**
  *
  * @author Jordan Walker <jiwalker@usgs.gov>
@@ -59,8 +59,8 @@ public class IntersectionCalculator {
 	
 	private CoordinateReferenceSystem utmCrs;
 	
-	private SimpleFeatureCollection resultTransectsCollection;
-	private SimpleFeatureCollection resultIntersectionsCollection;
+	private List<SimpleFeature> transectList;
+	private List<SimpleFeature> intersectionList;
 	
 	private SimpleFeatureCollection transformedShorelines;
 	private SimpleFeatureCollection transformedBaselines;
@@ -68,8 +68,7 @@ public class IntersectionCalculator {
 	private SimpleFeatureType intersectionFeatureType;
 	private SimpleFeatureType biasIncomingFeatureType;
 	private SimpleFeatureType transectFeatureType;
-			
-	private STRtree strTree;
+
 	private STRtree biasTree;
 	
 	private GeometryFactory geomFactory;
@@ -93,10 +92,14 @@ public class IntersectionCalculator {
 		if (performBiasCorrection) {
 			SimpleFeatureCollection transformedBiasRef = CRSUtils.transformFeatureCollection(biasRef, REQUIRED_CRS_WGS84, utmCrs);
 			this.biasIncomingFeatureType = biasRef.getSchema();
-			this.biasTree = new ShorelineSTRTreeBuilder(transformedBiasRef).build();
+			Polygon biasBounds = ShorelineUtils.bboxToPolygon(transformedBiasRef.getBounds());
+			this.biasTree = new ShorelineSTRTreeBuilder(transformedBiasRef, biasBounds).build();
 		} else {
 			this.biasTree = null;
 		}
+		
+		this.transectList = new ArrayList<>();
+		this.intersectionList = new ArrayList<>();
 		
 		if (Double.isNaN(maxTransectLength) || maxTransectLength == 0.0) {
 			maxTransectLength = IntersectionCalculator.calculateMaxDistance(transformedShorelines, transformedBaselines);
@@ -147,60 +150,65 @@ public class IntersectionCalculator {
 		if (vectsOnBaseline.length == 0) {
 			return;
 		}
-		List<SimpleFeature> transectFeatures = new LinkedList<>();
-		List<SimpleFeature> intersectionFeatures = new LinkedList<>();
+		
 		AttributeGetter attGet = new AttributeGetter(intersectionFeatureType);
 		AttributeGetter biasGetter = new AttributeGetter(biasIncomingFeatureType);
 		// grow by about 200?
 		double guessTransectLength = MIN_TRANSECT_LENGTH * 4;
 		
+		Geometry planBounds = (Geometry)executionPlan.getDefaultGeometry();
+		// STRtree occupies a substantial portion of memory, this should be kept as small as reasonable
+		STRtree strTree = new ShorelineSTRTreeBuilder(transformedShorelines, planBounds).build();
 		for (Transect transect : vectsOnBaseline) {
-			Map<DateTime, Intersection> allIntersections = Maps.newHashMap();
-			double startDistance = 0;
-			ProxyDatumBias biasCorrection = null;
-			boolean changeTransectLength = true;
-			double subTransectLength = guessTransectLength;
-			if (transect.getLength() > 0.0) {
-				changeTransectLength = false;
-			}
-			
-			do {
-				Transect subTransect = null;
-				if (changeTransectLength) {
-					
-					if (startDistance + guessTransectLength >= maxTransectLength) {
-						subTransectLength = maxTransectLength - startDistance;
+			if (planBounds.contains(transect.getOriginPoint())) {
+				Map<DateTime, Intersection> allIntersections = Maps.newHashMap();
+				double startDistance = 0;
+				ProxyDatumBias biasCorrection = null;
+				boolean changeTransectLength = true;
+				double subTransectLength = guessTransectLength;
+				if (transect.getLength() > 0.0) {
+					changeTransectLength = false;
+				}
+
+				do {
+					Transect subTransect = null;
+					if (changeTransectLength) {
+
+						if (startDistance + guessTransectLength >= maxTransectLength) {
+							subTransectLength = maxTransectLength - startDistance;
+						}
+						subTransect = transect.subTransect(startDistance, subTransectLength);
+						LineString lineString = subTransect.getLineString();
+						LineString intersection = (LineString)lineString.intersection(planBounds);
+						subTransect.setLength(intersection.getLength());
+						startDistance += subTransectLength;
+					} else {
+						subTransect = transect;
+						startDistance = maxTransectLength; // end the loop
 					}
-					subTransect = transect.subTransect(startDistance, subTransectLength);
-					startDistance += subTransectLength;
-				} else {
-					subTransect = transect;
-					startDistance = maxTransectLength; // end the loop
-				}
-				Intersection.updateIntersectionsWithSubTransect(allIntersections, transect.getOriginPoint(), subTransect, strTree, useFarthest, attGet);
-				if (biasCorrection == null && biasTree != null) {
-					biasCorrection = getBiasValue(subTransect, biasTree, biasGetter);
-				}
-			} while (startDistance < maxTransectLength);
+					Intersection.updateIntersectionsWithSubTransect(allIntersections, transect.getOriginPoint(), subTransect, strTree, useFarthest, attGet);
+					if (biasCorrection == null && biasTree != null) {
+						biasCorrection = getBiasValue(subTransect, biasTree, biasGetter);
+					}
+				} while (startDistance < maxTransectLength);
 
-			if (!allIntersections.isEmpty()) {  // ignore non-crossing lines
-				if (changeTransectLength) {
-					double transectLength = Intersection.absoluteFarthest(MIN_TRANSECT_LENGTH, allIntersections.values());
-					transect.setLength(transectLength + TRANSECT_PADDING);
-				}
-				transect.setBias(biasCorrection);
-				SimpleFeature feature = transect.createFeature(transectFeatureType);
-				transectFeatures.add(feature);
+				if (!allIntersections.isEmpty()) {  // ignore non-crossing lines
+					if (changeTransectLength) {
+						double transectLength = Intersection.absoluteFarthest(MIN_TRANSECT_LENGTH, allIntersections.values());
+						transect.setLength(transectLength + TRANSECT_PADDING);
+					}
+					transect.setBias(biasCorrection);
+					SimpleFeature feature = transect.createFeature(transectFeatureType);
+					transectList.add(feature);
 
-				for (Intersection intersection : allIntersections.values()) {
-					// do I need to worry about order?
-					intersection.setBias(biasCorrection);
-					intersectionFeatures.add(intersection.createFeature(intersectionFeatureType));
+					for (Intersection intersection : allIntersections.values()) {
+						// do I need to worry about order?
+						intersection.setBias(biasCorrection);
+						intersectionList.add(intersection.createFeature(intersectionFeatureType));
+					}
 				}
 			}
 		}
-		resultTransectsCollection = DataUtilities.collection(transectFeatures);
-		resultIntersectionsCollection = DataUtilities.collection(intersectionFeatures);
 	}
 
 	/**
@@ -279,11 +287,11 @@ public class IntersectionCalculator {
 	}
 
 	public SimpleFeatureCollection getResultTransectsCollection() {
-		return resultTransectsCollection;
+		return DataUtilities.collection(transectList);
 	}
 
 	public SimpleFeatureCollection getResultIntersectionsCollection() {
-		return resultIntersectionsCollection;
+		return DataUtilities.collection(intersectionList);
 	}
 	
 	// NOTE: For each segment p0 is interval coord, with p1 = p0 + direction of segment as unit vector.
@@ -495,7 +503,7 @@ public class IntersectionCalculator {
 				upperBound = vectsOnBaseline.length - 1;
 			}
 			CalculationAreaDescriptor calculationAreaDescriptor = new CalculationAreaDescriptor();
-			// Change this if crs changes
+			// TODO Change this if crs can change across calculationAreas
 			calculationAreaDescriptor.setCrs(utmCrs);
 			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, lowerBound, upperBound);
 			calculationAreaDescriptor.setTransects(subset);
@@ -504,7 +512,7 @@ public class IntersectionCalculator {
 			
 			lowerBound = upperBound + 1;
 		}
-		return resultTransectsCollection = DataUtilities.collection(executionPlan);
+		return DataUtilities.collection(executionPlan);
 	}
 	
 	private int getVerticesInArea(Transect[] transects) {
