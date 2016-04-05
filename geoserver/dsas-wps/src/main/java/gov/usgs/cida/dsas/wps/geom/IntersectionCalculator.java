@@ -56,6 +56,7 @@ public class IntersectionCalculator {
 	private static final double MIN_TRANSECT_LENGTH = 50.0; // meters
 	private static final double TRANSECT_PADDING = 5.0d; // meters
 	private static final int MAX_VERTICES_IN_CALC_AREA = 1_000;
+	private static final double CALC_AREA_OFFSET = 0.5d;
 	
 	private CoordinateReferenceSystem utmCrs;
 	
@@ -83,7 +84,7 @@ public class IntersectionCalculator {
 			double maxTransectLength, boolean useFarthest, boolean performBiasCorrection) {
 
 		this.utmCrs = utmCrs;
-		this.intersectionFeatureType = Intersection.buildSimpleFeatureType(shorelines, Constants.REQUIRED_CRS_WGS84);
+		this.intersectionFeatureType = Intersection.buildSimpleFeatureType(shorelines, utmCrs);
 		this.transectFeatureType = Transect.buildFeatureType(utmCrs);
 		this.geomFactory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
 
@@ -160,7 +161,7 @@ public class IntersectionCalculator {
 		// STRtree occupies a substantial portion of memory, this should be kept as small as reasonable
 		STRtree strTree = new ShorelineSTRTreeBuilder(transformedShorelines, planBounds).build();
 		for (Transect transect : vectsOnBaseline) {
-			if (planBounds.contains(transect.getOriginPoint())) {
+			if (planBounds.covers(transect.getOriginPoint())) {
 				Map<DateTime, Intersection> allIntersections = Maps.newHashMap();
 				double startDistance = 0;
 				ProxyDatumBias biasCorrection = null;
@@ -207,6 +208,8 @@ public class IntersectionCalculator {
 						intersectionList.add(intersection.createFeature(intersectionFeatureType));
 					}
 				}
+			} else {
+				int x = 1;
 			}
 		}
 	}
@@ -492,7 +495,8 @@ public class IntersectionCalculator {
 		int verticesWithinArea = getVerticesInArea(vectsOnBaseline);
 		while (verticesWithinArea > MAX_VERTICES_IN_CALC_AREA) {
 			numberTransectsPerArea = (int)Math.floor(numberTransectsPerArea / 2);
-			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, 0, numberTransectsPerArea);
+			// copyOfRange upperbound is exclusive
+			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, 0, numberTransectsPerArea + 1);
 			verticesWithinArea = getVerticesInArea(subset);
 		}
 		
@@ -505,7 +509,8 @@ public class IntersectionCalculator {
 			CalculationAreaDescriptor calculationAreaDescriptor = new CalculationAreaDescriptor();
 			// TODO Change this if crs can change across calculationAreas
 			calculationAreaDescriptor.setCrs(utmCrs);
-			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, lowerBound, upperBound);
+			// copyOfRange upperbound is exclusive
+			Transect[] subset = Arrays.copyOfRange(vectsOnBaseline, lowerBound, upperBound + 1);
 			calculationAreaDescriptor.setTransects(subset);
 			calculationAreaDescriptor.setTransectArea(getTransectArea(subset));
 			executionPlan.add(calculationAreaDescriptor.toFeature());

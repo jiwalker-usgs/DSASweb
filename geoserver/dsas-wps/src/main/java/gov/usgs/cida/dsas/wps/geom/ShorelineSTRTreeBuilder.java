@@ -69,6 +69,8 @@ import org.opengis.feature.simple.SimpleFeature;
  */
 public class ShorelineSTRTreeBuilder {
 
+	private static final double WITHIN_OFFSET = 0.5d;
+	
 	private STRtree strTree;
 	private GeometryFactory factory;
 	private Geometry within;
@@ -165,7 +167,7 @@ public class ShorelineSTRTreeBuilder {
 
 	private void fillTree(LineSegment segment, SimpleFeature first, SimpleFeature second) {
 		LineString geom = segment.toGeometry(factory);
-		if (within.contains(geom) || within.crosses(geom)) {
+		if (geom.isWithinDistance(within, WITHIN_OFFSET)) {
 			this.strTree.insert(geom.getEnvelopeInternal(), new ShorelineFeature(geom, first, second));
 		}
 	}

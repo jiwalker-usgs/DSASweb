@@ -27,6 +27,7 @@ import org.opengis.feature.simple.SimpleFeatureType;
 public class TestPDBC {
 
 	@Test
+	@Ignore
 	public void testGeorgiaPDBCCorrection() throws Exception {
 		File shpfile = File.createTempFile("test", ".shp");
 		URL baselineShapefile = CreateTransectsAndIntersectionsProcessTest.class.getClassLoader()
