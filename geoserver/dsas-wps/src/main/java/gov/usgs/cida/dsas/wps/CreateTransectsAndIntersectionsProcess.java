@@ -3,7 +3,6 @@ package gov.usgs.cida.dsas.wps;
 import gov.usgs.cida.dsas.exceptions.UnsupportedCoordinateReferenceSystemException;
 import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.util.LayerImportUtil;
-import gov.usgs.cida.dsas.util.UTMFinder;
 
 import static gov.usgs.cida.dsas.utilities.features.Constants.REQUIRED_CRS_WGS84;
 

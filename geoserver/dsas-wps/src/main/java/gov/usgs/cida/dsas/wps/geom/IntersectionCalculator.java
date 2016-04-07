@@ -18,7 +18,6 @@ import gov.usgs.cida.dsas.util.BaselineDistanceAccumulator;
 import gov.usgs.cida.dsas.util.CRSUtils;
 import gov.usgs.cida.dsas.util.ShorelineUtils;
 import gov.usgs.cida.dsas.utilities.features.AttributeGetter;
-import gov.usgs.cida.dsas.utilities.features.Constants;
 
 import static gov.usgs.cida.dsas.utilities.features.Constants.AVG_SLOPE_ATTR;
 import static gov.usgs.cida.dsas.utilities.features.Constants.BASELINE_ORIENTATION_ATTR;
@@ -55,7 +54,7 @@ public class IntersectionCalculator {
 	
 	private static final double MIN_TRANSECT_LENGTH = 50.0; // meters
 	private static final double TRANSECT_PADDING = 5.0d; // meters
-	private static final int MAX_VERTICES_IN_CALC_AREA = 1_000;
+	private static final int MAX_VERTICES_IN_CALC_AREA = 10_000;
 	private static final double CALC_AREA_OFFSET = 0.5d;
 	
 	private CoordinateReferenceSystem utmCrs;
@@ -208,8 +207,6 @@ public class IntersectionCalculator {
 						intersectionList.add(intersection.createFeature(intersectionFeatureType));
 					}
 				}
-			} else {
-				int x = 1;
 			}
 		}
 	}

@@ -297,7 +297,7 @@ public class CRSUtils {
 	
 	public static CoordinateReferenceSystem lookupCRS(String epsgCode) throws FactoryException {
 		String lookup = epsgCode;
-		if (!epsgCode.startsWith("EPSG") && !epsgCode.startsWith("epsg")) {
+		if (!epsgCode.toLowerCase().startsWith("epsg")) {
 			lookup = "EPSG:" + epsgCode;
 		}
 		CoordinateReferenceSystem crs = CRS.decode(lookup);
